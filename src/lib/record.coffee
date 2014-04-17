@@ -1,7 +1,6 @@
 {Nohm} = require "nohm"
 assert = require 'assert'
 hasher = require './hasher'
-require_tree = require 'require_tree'
 
 extend = (dest, objs...) ->
   for obj in objs
@@ -29,16 +28,15 @@ class Record extends Nohm
     assert options.redis, "Set redis client first"
 
     options.redis.on 'connect', =>
-      
-      ###
-      if options.models.charAt(0) isnt "/"
-        model.parent
-      ###
-      
-      require_tree options.models if options.models
-
       @setClient options.redis
       @setPrefix options.prefix
+      
+      if options.models.charAt(0) isnt "/"
+        options.models = require('path').dirname(module.parent) + "/" + options.models
+      
+      for filename in require('fs').readdirSync(options.models)
+        require options.models + "/" + filename
+
       options.connect?.call @
 
   @model: (name, options) ->
@@ -69,22 +67,22 @@ class Record extends Nohm
         collection::modelName = name
         Record.collections[name] = collection
 
-    orig = model.find
+    model.__find = model.find
     model.find = (searches, callback) ->
       if @getClient().shardable \
         and searches and typeof(searches) isnt 'function' \
         and Object.keys(searches).length > 1
           return throw new Error "cannot search more one criteria with redism"
-      orig.apply @, arguments
+      model.__find.apply @, arguments
 
-    orig = model.sort
+    model.__sort = model.sort
     model.sort = (options, ids) ->
       ins = new @
       if @getClient().shardable
         field_type = ins.properties[options.field].type
         scored = Record.indexNumberTypes.indexOf(field_type) != -1
         return throw new Error "cannot sort on non-numeric fields with redism" unless scored
-      orig.apply @, arguments
+      model.__sort.apply @, arguments
 
     model
 
@@ -102,7 +100,7 @@ class Record extends Nohm
         @collections[name] = view
       collection
 
-    getClient: -> Record.client
+    getClient: -> Record::getClient()
 
     getHashKey: (id) -> "#{Record.prefix.hash}#{@modelName}:#{id}"
 
@@ -244,9 +242,8 @@ class Record extends Nohm
 
   @_methods: null
 
-  @backend:
-
-    connect: (req, res, next) ->
+  @backend: (options) ->
+    (req, res, next) ->
       express  = require 'express'
       assets   = require 'connect-assets'
       template = require 'fuyun-template'
@@ -291,7 +288,7 @@ class Record extends Nohm
 
       app.on 'mount', (parent) ->
 
-        parent.nohm_backend = app
+        parent.record_backend = app
         app.locals.base_uri = app.path()
         app.locals.models = JSON.stringify Object.keys Record.getModels()
 
