@@ -29,7 +29,7 @@
         }
       });
     });
-    return it('when it was extended by record', function(done) {
+    it('when it was extended by record', function(done) {
       var ExtendedModel, instance;
       ExtendedModel = Record.getModel('ExtendedModel');
       instance = new ExtendedModel;
@@ -37,24 +37,48 @@
       ExtendedModel.should.have.property('count');
       ExtendedModel.should.have.property('get');
       return ExtendedModel.count(function(error, count) {
-        var e;
         count.should.eql(0);
-        try {
-          ExtendedModel.sort({
-            field: 'name'
-          });
-        } catch (_error) {
-          e = _error;
-          e.toString().should.equal("Error: cannot sort on non-numeric fields with redism");
-        }
-        return ExtendedModel.sort({
-          field: 'date'
-        }, function(error, ids) {
-          should.not.exists(error);
-          ids.length.should.equal(0);
-          return done();
-        });
+        return done();
       });
+    });
+    it('sort is restricted', function(done) {
+      var ExtendedModel, sortOnWrongField;
+      ExtendedModel = Record.getModel('ExtendedModel');
+      sortOnWrongField = function() {
+        return ExtendedModel.sort({
+          field: 'name'
+        });
+      };
+      sortOnWrongField.should["throw"]("cannot sort on non-numeric fields with redism");
+      return ExtendedModel.sort({
+        field: 'date'
+      }, function(error, ids) {
+        should.not.exists(error);
+        ids.length.should.equal(0);
+        return done();
+      });
+    });
+    return it('find only work on single criteria', function(done) {
+      var ExtendedModel, findByMultiCriteria, findByOneCriteria;
+      ExtendedModel = Record.getModel('ExtendedModel');
+      findByOneCriteria = function() {
+        return ExtendedModel.find({
+          name: 'foo'
+        }, function() {
+          return 'pass';
+        });
+      };
+      findByOneCriteria.should.not["throw"]();
+      findByMultiCriteria = function() {
+        return ExtendedModel.find({
+          name: 'foo',
+          date: 'bar'
+        }, function() {
+          return 'pass';
+        });
+      };
+      findByMultiCriteria.should["throw"]();
+      return done();
     });
   });
 

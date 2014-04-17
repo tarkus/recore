@@ -7,16 +7,19 @@ extend = (dest, objs...) ->
     dest[k] = v for k, v of obj
   dest
 
-VIEW_TTL = 300000 # View idle for 5 min = inactive
-VIEW_RECYCLE_INTERVAL = 600000 # Do house work every 10 min
-VIEW_RECYCLE_QUATITY = 1000
+COLLECTION_TTL = 300000 # View idle for 5 min = inactive
+COLLECTION_RECYCLE_INTERVAL = 10000 # Do house work every 10 min
+COLLECTION_RECYCLE_QUATITY = 1000
+COLLECTION_RECYCLE_TARGET = 10000
 
-recycle_views = ->
-  ids = Object.keys Record.views
-  ids = ids.slice(0, VIEW_RECYCLE_TARGET)
-  ids.forEach (name) -> return delete Record.views[name]
+recycle = ->
+  ids = Object.keys Record.collections
+  if ids.length > COLLECTION_RECYCLE_TARGET
+    ids = ids.slice(0, COLLECTION_RECYCLE_QUATITY)
+    ids.forEach (name) -> return delete Record.collections[name]
+  return setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
-setTimeout recycle_views, VIEW_RECYCLE_INTERVAL
+setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
 class Record extends Nohm
 
@@ -25,17 +28,18 @@ class Record extends Nohm
   @getModel: (name) -> @getModels()[name]
 
   @configure: (options) ->
-    assert options.redis, "Set redis client first"
+    assert options and options.redis, "Set redis client first"
 
     options.redis.on 'connect', =>
       @setClient options.redis
       @setPrefix options.prefix
+      Record.client = Nohm.client
       
-      if options.models.charAt(0) isnt "/"
-        options.models = require('path').dirname(module.parent) + "/" + options.models
-      
-      for filename in require('fs').readdirSync(options.models)
-        require options.models + "/" + filename
+      if options.models
+        if options.models.charAt(0) isnt "/"
+          options.models = require('path').dirname(module.parent.filename) + "/" + options.models
+        for filename in require('fs').readdirSync(options.models)
+          require options.models + "/" + filename
 
       options.connect?.call @
 
@@ -48,24 +52,19 @@ class Record extends Nohm
     model = Nohm.model(name, options)
     model = extend model, @_extends, options.extends
     model.modelName = name
-    model.keepalive = new Date().getTime()
 
     # Collections!
     model.collectionDefinition = options.properties.collections or null
 
     if model.collectionDefinition
       if Array.isArray model.collectionDefinition
-        collection = model.collectionDefinition
+        collections = model.collectionDefinition
       else if typeof model.collectionDefinition is 'object'
-        collection = Object.keys model.collectionDefinition
+        collections = Object.keys model.collectionDefinition
       else
         throw new Error "wrong type of collection definition"
 
-      collection.forEach (col) ->
-        name = "#{name}:collection:#{col}"
-        collection = extend {}, model
-        collection::modelName = name
-        Record.collections[name] = collection
+      collections.forEach (key) -> model.collection key
 
     model.__find = model.find
     model.find = (searches, callback) ->
@@ -77,7 +76,7 @@ class Record extends Nohm
 
     model.__sort = model.sort
     model.sort = (options, ids) ->
-      ins = new @
+      ins = new model
       if @getClient().shardable
         field_type = ins.properties[options.field].type
         scored = Record.indexNumberTypes.indexOf(field_type) != -1
@@ -90,14 +89,13 @@ class Record extends Nohm
 
   @_extends:
 
-    collection: (id) ->
-      return @logError "No collection definition found" unless @collectionDefinition?
-      name = "#{@modelName}:collection:#{id}"
-      collection = @collections[name]
+    collection: (key) ->
+      name = "#{@modelName}:collection:#{key}"
+      collection = Record.collections[name]
       unless collection
         collection = extend {}, @
-        collection::modelName = name
-        @collections[name] = view
+        collection.modelName = name
+        Record.collections[name] = collection
       collection
 
     getClient: -> Record::getClient()
@@ -129,7 +127,7 @@ class Record extends Nohm
         callback = criteria
         criteria = null
         m = new this
-        return Record.client.scard Record.prefix.idsets + m.modelName, (err, result) ->
+        return @getClient().scard Record.prefix.idsets + m.modelName, (err, result) ->
           return callback err if err
           return callback null, result
 
@@ -143,7 +141,7 @@ class Record extends Nohm
         property = null
 
       model = @
-      multi = Record.client.multi()
+      multi = @getClient().multi()
       affected_rows = 0
       old_unique = []
       new_unique = []
@@ -176,7 +174,7 @@ class Record extends Nohm
 
     deindex: (properties, callback) ->
       model = @
-      multi = Record.client.multi()
+      multi = @getClient().multi()
       deletes = []
       if typeof properties is 'function'
         callback = properties

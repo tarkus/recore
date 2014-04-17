@@ -1,6 +1,6 @@
 {
   "name": "record-orm",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "A simple redis orm based on Nohm",
   "main": "lib/record.js",
   "scripts": {
@@ -19,7 +19,6 @@
     "fuyun-template": "~0.1.2",
     "jade": "~1.3.0",
     "nohm": "*",
-    "require_tree": "^0.6.8",
     "socket.io": "~1.0.0",
     "stylus": "~0.42.3"
   },
