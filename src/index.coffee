@@ -110,6 +110,22 @@ class Record extends Nohm
         else
           callback.call(null, objs)
 
+    find_or_create: (criteria, callback) ->
+      model = @
+      @find criteria, (err, ids) ->
+        if err
+          if err is 'not found'
+            return callback null, new model
+          else
+            return callback err
+
+        return callback "more than one" if ids.length > 1
+
+        @load ids.pop(), (err, props) ->
+          return callback err if err
+          return callback null, @
+
+
     ids: (ids, callback) ->
       return callback(null, []) if ids.length is 0
       rows = []
