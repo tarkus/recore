@@ -1,20 +1,19 @@
 should = require 'should'
-Record = require '../lib/record'
+Record = require '../lib'
 
 describe 'Nohm model should be extended', ->
 
-  before (done) ->
-    Record.configure
-      redis: require('redis').createClient()
-      connect: ->
-        Record.model 'ExtendedModel',
-          properties:
-            name:
-              type: 'string'
-              index: true
-        done()
-
   it 'when it was extended by record', (done) ->
+
+      Record.configure
+        redis: require('redis').createClient()
+
+      Record.model 'ExtendedModel',
+        properties:
+          name:
+            type: 'string'
+            index: true
+
       ExtendedModel = Record.getModel 'ExtendedModel'
 
       instance = new ExtendedModel
@@ -28,24 +27,23 @@ describe 'Nohm model should be extended', ->
           ids.length.should.be.equal 0
           done()
 
-  before (done) ->
-    Record.configure
-      redis: require('redis').createClient()
-      connect: ->
-        Record.model 'InheritedExtendedModel',
-          properties:
-            name:
-              type: 'string'
-            address:
-              type: 'string'
-          extends:
-            dummy: ->
-          methods:
-            saveMyDay: ->
-
-        done()
 
   it 'when it was extended by subclass', (done) ->
+
+    Record.configure
+      redis: require('redis').createClient()
+
+    Record.model 'InheritedExtendedModel',
+      properties:
+        name:
+          type: 'string'
+        address:
+          type: 'string'
+      extends:
+        dummy: ->
+      methods:
+        saveMyDay: ->
+
     InheritedExtendedModel = Record.getModel 'InheritedExtendedModel'
     instance = Record.factory 'InheritedExtendedModel'
     instance.should.be.an.instanceof InheritedExtendedModel

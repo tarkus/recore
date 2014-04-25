@@ -1,22 +1,23 @@
 should = require 'should'
 Redism = require 'redism'
-Record = require '../lib/record'
+Record = require '../lib'
 
 describe 'Collections', ->
 
   before (done) ->
     Record.configure
       redis: new Redism
-      connect: ->
-        Record.model 'ExtendedModel',
-          properties:
-            name:
-              type: 'string'
-              index: true
-            date:
-              type: 'timestamp'
-              index: true
-        done()
+
+    Record.model 'ExtendedModel',
+      properties:
+        name:
+          type: 'string'
+          index: true
+        date:
+          type: 'timestamp'
+          index: true
+
+    done()
 
   it 'could be created', (done) ->
     ExtendedModel = Record.getModel 'ExtendedModel'

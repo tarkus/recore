@@ -8,7 +8,7 @@ extend = (dest, objs...) ->
   dest
 
 COLLECTION_TTL = 300000 # View idle for 5 min = inactive
-COLLECTION_RECYCLE_INTERVAL = 10000 # Do house work every 10 min
+COLLECTION_RECYCLE_INTERVAL = 600000 # Do house work every 10 min
 COLLECTION_RECYCLE_QUATITY = 1000
 COLLECTION_RECYCLE_TARGET = 10000
 
@@ -30,18 +30,18 @@ class Record extends Nohm
   @configure: (options) ->
     assert options and options.redis, "Set redis client first"
 
-    options.redis.on 'connect', =>
-      @setClient options.redis
-      @setPrefix options.prefix
-      Record.client = Nohm.client
-      
-      if options.models
-        if options.models.charAt(0) isnt "/"
-          options.models = require('path').dirname(module.parent.filename) + "/" + options.models
-        for filename in require('fs').readdirSync(options.models)
-          require options.models + "/" + filename
+    options.redis.connected = true
+    @setClient options.redis
+    @setPrefix options.prefix
+    Record.client = Nohm.client
+    
+    if options.models
+      if options.models.charAt(0) isnt "/"
+        options.models = require('path').dirname(module.parent.filename) + "/" + options.models
+      for filename in require('fs').readdirSync(options.models)
+        require options.models + "/" + filename
 
-      options.connect?.call @
+    Record
 
   @model: (name, options) ->
     options.methods ?= {}
