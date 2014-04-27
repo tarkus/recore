@@ -2,15 +2,12 @@
 assert = require 'assert'
 hasher = require './hasher'
 
+schemas = {}
+
 extend = (dest, objs...) ->
   for obj in objs
     dest[k] = v for k, v of obj
   dest
-
-COLLECTION_TTL = 300000 # View idle for 5 min = inactive
-COLLECTION_RECYCLE_INTERVAL = 600000 # Do house work every 10 min
-COLLECTION_RECYCLE_QUATITY = 1000
-COLLECTION_RECYCLE_TARGET = 10000
 
 recycle = ->
   ids = Object.keys Record.collections
@@ -18,6 +15,11 @@ recycle = ->
     ids = ids.slice(0, COLLECTION_RECYCLE_QUATITY)
     ids.forEach (name) -> return delete Record.collections[name]
   return setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
+
+COLLECTION_TTL = 300000 # View idle for 5 min = inactive
+COLLECTION_RECYCLE_INTERVAL = 600000 # Do house work every 10 min
+COLLECTION_RECYCLE_QUATITY = 1000
+COLLECTION_RECYCLE_TARGET = 10000
 
 setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
@@ -43,13 +45,14 @@ class Record extends Nohm
 
     Record
 
-  @model: (name, options) ->
+  @model: (name, options, temp) ->
+    schemas[name] = options
     options.methods ?= {}
     options.extends ?= {}
 
     options.methods = extend options.methods, @_methods
 
-    model = Nohm.model(name, options)
+    model = Nohm.model(name, options, temp)
     model = extend model, @_extends, options.extends
     model.modelName = name
 
@@ -66,6 +69,13 @@ class Record extends Nohm
 
       collections.forEach (key) -> model.collection key
 
+    model.__findAndLoad = model.findAndLoad
+    model.findAndLoad = (searches, callback) ->
+      if typeof searches is 'function'
+        callback = searches
+        searches = {}
+      model.__findAndLoad.call model, searches, callback
+
     model.__find = model.find
     model.find = (searches, callback) ->
       if @getClient().shardable \
@@ -81,9 +91,11 @@ class Record extends Nohm
         field_type = ins.properties[options.field].type
         scored = Record.indexNumberTypes.indexOf(field_type) != -1
         return throw new Error "cannot sort on non-numeric fields with redism" unless scored
+        return throw new Error "cannot sort on subset with redism" unless Array.isArray ids if Array.isArray ids
+
       model.__sort.apply @, arguments
 
-    model
+    return model
 
   @_methods: {}
 
@@ -93,8 +105,10 @@ class Record extends Nohm
       name = "#{@modelName}:collection:#{key}"
       collection = Record.collections[name]
       unless collection
-        collection = extend {}, @
+        model = @
+        collection = Record.model name, schemas[model.modelName]
         collection.modelName = name
+        collection::modelName = name
         Record.collections[name] = collection
       collection
 
@@ -112,19 +126,13 @@ class Record extends Nohm
 
     find_or_create: (criteria, callback) ->
       model = @
-      @find criteria, (err, ids) ->
-        if err
-          if err is 'not found'
-            return callback null, new model
-          else
-            return callback err
-
+      @find criteria, (err, ids) =>
+        return callback null, new model if err is 'not found' or ids.length is 0
+        return callback err if err
         return callback "more than one" if ids.length > 1
-
         @load ids.pop(), (err, props) ->
           return callback err if err
           return callback null, @
-
 
     ids: (ids, callback) ->
       return callback(null, []) if ids.length is 0

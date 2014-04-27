@@ -21,7 +21,13 @@ describe 'Collections', ->
 
   it 'could be created', (done) ->
     ExtendedModel = Record.getModel 'ExtendedModel'
-    ExtendedModel.collection('10000').load 1, (error, props) ->
+    CollectionOne = ExtendedModel.collection('10000')
+    CollectionAnother = ExtendedModel.collection('100000')
+
+    CollectionOne.modelName.should.equal "ExtendedModel:collection:10000"
+    CollectionAnother.modelName.should.equal "ExtendedModel:collection:100000"
+
+    CollectionOne.load 1, (error, props) ->
       Record.collections.hasOwnProperty 'ExtendedModel:collection:10000'
       error.should.equal 'not found'
       done()
