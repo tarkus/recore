@@ -1,20 +1,20 @@
 should = require 'should'
-Record = require '../lib'
+Reco = require '../lib'
 
 describe 'Nohm model should be extended', ->
 
-  it 'when it was extended by record', (done) ->
+  it 'when it was extended by reco', (done) ->
 
-      Record.configure
+      Reco.configure
         redis: require('redis').createClient()
 
-      Record.model 'ExtendedModel',
+      Reco.model 'ExtendedModel',
         properties:
           name:
             type: 'string'
             index: true
 
-      ExtendedModel = Record.getModel 'ExtendedModel'
+      ExtendedModel = Reco.getModel 'ExtendedModel'
 
       instance = new ExtendedModel
       instance.should.be.an.instanceof ExtendedModel
@@ -30,10 +30,10 @@ describe 'Nohm model should be extended', ->
 
   it 'when it was extended by subclass', (done) ->
 
-    Record.configure
+    Reco.configure
       redis: require('redis').createClient()
 
-    Record.model 'InheritedExtendedModel',
+    Reco.model 'InheritedExtendedModel',
       properties:
         name:
           type: 'string'
@@ -44,8 +44,8 @@ describe 'Nohm model should be extended', ->
       methods:
         saveMyDay: ->
 
-    InheritedExtendedModel = Record.getModel 'InheritedExtendedModel'
-    instance = Record.factory 'InheritedExtendedModel'
+    InheritedExtendedModel = Reco.getModel 'InheritedExtendedModel'
+    instance = Reco.factory 'InheritedExtendedModel'
     instance.should.be.an.instanceof InheritedExtendedModel
     InheritedExtendedModel.should.have.an.property 'count'
     InheritedExtendedModel.should.have.an.property 'dummy'

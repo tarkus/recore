@@ -10,10 +10,10 @@ extend = (dest, objs...) ->
   dest
 
 recycle = ->
-  ids = Object.keys Record.collections
+  ids = Object.keys Reco.collections
   if ids.length > COLLECTION_RECYCLE_TARGET
     ids = ids.slice(0, COLLECTION_RECYCLE_QUATITY)
-    ids.forEach (name) -> return delete Record.collections[name]
+    ids.forEach (name) -> return delete Reco.collections[name]
   return setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
 COLLECTION_TTL = 300000 # View idle for 5 min = inactive
@@ -23,11 +23,17 @@ COLLECTION_RECYCLE_TARGET = 10000
 
 setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
-class Record extends Nohm
+class Reco extends Nohm
 
   @collections: {}
 
+  @base_models: {}
+
   @getModel: (name) -> @getModels()[name]
+
+  @getBaseModels: -> @base_models
+
+  @getBaseModel: (name) -> @getBaseModels()[name]
 
   @configure: (options) ->
     assert options and options.redis, "Set redis client first"
@@ -35,7 +41,7 @@ class Record extends Nohm
     options.redis.connected = true
     @setClient options.redis
     @setPrefix options.prefix
-    Record.client = Nohm.client
+    Reco.client = Nohm.client
     
     if options.models
       if options.models.charAt(0) isnt "/"
@@ -43,7 +49,7 @@ class Record extends Nohm
       for filename in require('fs').readdirSync(options.models)
         require options.models + "/" + filename
 
-    Record
+    return Reco
 
   @model: (name, options, temp) ->
     schemas[name] = options
@@ -55,6 +61,8 @@ class Record extends Nohm
     model = Nohm.model(name, options, temp)
     model = extend model, @_extends, options.extends
     model.modelName = name
+
+    @base_models[name] = model
 
     # Collections!
     model.collectionDefinition = options.properties.collections or null
@@ -89,7 +97,7 @@ class Record extends Nohm
       ins = new model
       if @getClient().shardable
         field_type = ins.properties[options.field].type
-        scored = Record.indexNumberTypes.indexOf(field_type) != -1
+        scored = Reco.indexNumberTypes.indexOf(field_type) != -1
         return throw new Error "cannot sort on non-numeric fields with redism" unless scored
         return throw new Error "cannot sort on subset with redism" unless Array.isArray ids if Array.isArray ids
 
@@ -103,18 +111,18 @@ class Record extends Nohm
 
     collection: (key) ->
       name = "#{@modelName}:collection:#{key}"
-      collection = Record.collections[name]
+      collection = Reco.collections[name]
       unless collection
         model = @
-        collection = Record.model name, schemas[model.modelName]
+        collection = Reco.model name, schemas[model.modelName]
         collection.modelName = name
         collection::modelName = name
-        Record.collections[name] = collection
+        Reco.collections[name] = collection
       collection
 
-    getClient: -> Record::getClient()
+    getClient: -> Reco::getClient()
 
-    getHashKey: (id) -> "#{Record.prefix.hash}#{@modelName}:#{id}"
+    getHashKey: (id) -> "#{Reco.prefix.hash}#{@modelName}:#{id}"
 
     get: (criteria, callback) ->
       @findAndLoad criteria, (err, objs) ->
@@ -127,7 +135,10 @@ class Record extends Nohm
     find_or_create: (criteria, callback) ->
       model = @
       @find criteria, (err, ids) =>
-        return callback null, new model if err is 'not found' or ids.length is 0
+        if err is 'not found' or ids.length is 0
+          new_obj = new model
+          new_obj.prop criteria
+          return callback null, new_obj
         return callback err if err
         return callback "more than one" if ids.length > 1
         @load ids.pop(), (err, props) ->
@@ -151,7 +162,7 @@ class Record extends Nohm
         callback = criteria
         criteria = null
         m = new this
-        return @getClient().scard Record.prefix.idsets + m.modelName, (err, result) ->
+        return @getClient().scard Reco.prefix.idsets + m.modelName, (err, result) ->
           return callback err if err
           return callback null, result
 
@@ -179,7 +190,7 @@ class Record extends Nohm
                 propLower = if @properties[prop].type is 'string' \
                   then @properties[prop].__oldValue.toLowerCase() \
                   else @properties[prop].__oldValue
-                multi.setnx "#{Record.prefix.unique}#{@modelName}:#{prop}:#{@properties[prop].value}", id
+                multi.setnx "#{Reco.prefix.unique}#{@modelName}:#{prop}:#{@properties[prop].value}", id
               else
                 @properties[prop].__updated = true
 
@@ -211,11 +222,11 @@ class Record extends Nohm
           properties.push p
 
       properties.forEach (p, idx) =>
-        Record.client.keys "#{Record.prefix.unique}#{@modelName}:#{p}:*", (err, unique_keys) =>
+        Reco.client.keys "#{Reco.prefix.unique}#{@modelName}:#{p}:*", (err, unique_keys) =>
           deletes = unique_keys
-          Record.client.keys "#{Record.prefix.index}#{@modelName}:#{p}:*", (err, index_keys) =>
+          Reco.client.keys "#{Reco.prefix.index}#{@modelName}:#{p}:*", (err, index_keys) =>
             deletes = deletes.concat index_keys
-            Record.client.keys "#{Record.prefix.scoredindex}#{@modelName}:#{p}:*", (err, scoredindex_keys) =>
+            Reco.client.keys "#{Reco.prefix.scoredindex}#{@modelName}:#{p}:*", (err, scoredindex_keys) =>
               deletes = deletes.concat scoredindex_keys
 
               if idx is properties.length - 1
@@ -227,7 +238,7 @@ class Record extends Nohm
 
     clean: (callback) ->
       model = new @
-      multi = Record.client.multi()
+      multi = Reco.client.multi()
       deletes = []
       affected_rows = 0
       undefined_properties = []
@@ -239,7 +250,7 @@ class Record extends Nohm
             err = 'not found' unless Array.isArray(keys) and keys.length > 0 and not err
 
             if err
-              Record.logError "loading a hash produced an error: #{err}"
+              Reco.logError "loading a hash produced an error: #{err}"
               return callback?.call @, err
 
             # Delete unused properties
@@ -250,7 +261,7 @@ class Record extends Nohm
               if not is_meta and not model.properties.hasOwnProperty(p)
                 affected_rows += 1
                 if undefined_properties.indexOf(p) is -1
-                  Record.logError "Undefined property '#{p}' found, will be deleted"
+                  Reco.logError "Undefined property '#{p}' found, will be deleted"
                   undefined_properties.push p
                 multi.hdel @getHashKey(id), p
 
@@ -264,128 +275,4 @@ class Record extends Nohm
 
   @_methods: null
 
-  @backend: (options) ->
-    (req, res, next) ->
-      express  = require 'express'
-      assets   = require 'connect-assets'
-      template = require 'fuyun-template'
-
-      app = express()
-
-      app.locals.title = "Record Backend"
-
-      StatsHandler = (req, res, next) ->
-        Record.client.info (err, result) ->
-          res.locals.stats = result unless err
-          next err
-
-      CountHandler = (req, res, next) ->
-          models = Record.getModels()
-          total = Object.keys(models).length
-          output = {}
-          counter = 0
-          _count = (name) ->
-            model.count (err, count) ->
-              counter += 1
-              return next err if err
-              output[name] = count
-              if counter is total
-                res.locals.count = output
-                next()
-          _count name for name, model of models
-
-      app.configure ->
-        app.set 'view engine', 'jade'
-        app.set 'views', "#{__dirname}/../views"
-
-        app.use express.favicon "#{__dirname}/../public/images/favicon.png"
-        app.use express.compress()
-        app.use express.methodOverride()
-        app.use express.json strict: false
-        app.use express.urlencoded()
-        app.use express.cookieParser()
-        app.use express.static "#{__dirname}/../public"
-
-        app.use app.router
-
-      app.on 'mount', (parent) ->
-
-        parent.record_backend = app
-        app.locals.base_uri = app.path()
-        app.locals.models = JSON.stringify Object.keys Record.getModels()
-
-        app.use assets
-          src: "#{__dirname}/../public"
-          helperContext: app.locals
-          servePath: app.path()
-
-        app.use Record.connect
-          url: "/validator.js"
-          namespace: 'validator'
-
-        template.setup "app", prefix: "#{app.path()}/templates"
-        template.attach app
-
-        app.use "/templates", template.connect()
-
-      app.get "/schema/:name", (req, res) ->
-        return res.status 404 unless req.params.name
-        schema = {}
-        model = Record.getModels()[req.params.name]
-        ins = new model
-        for name, def of ins.properties
-          def.type = def.type.toString() if typeof def.type is "function"
-          def.defaultValue = def.defaultValue.toString() if typeof def.defaultValue is "function"
-
-          schema[name] =
-            type: def.type
-            index: def.index
-            unique: def.unique
-            default: def.defaultValue
-
-        res.send JSON.stringify name: req.params.name, schema: schema
-
-      app.get "/record/:model/page/:page", (req, res) ->
-        return res.status 404 unless req.params.model
-        page = req.params.page or 1
-        number_per_page = 30
-        model = Record.getModels()[req.params.name]
-        model.sort
-          field: 'created_at'
-          direction: 'DESC'
-          start: (page - 1) * number_per_page
-          limit: number_per_page
-        , (err, ids) ->
-          return res.status 500 if err
-          all = []
-          counter = 0
-          total = ids.length
-          ids.forEach (id) ->
-            model.load id, (err, props) ->
-              counter += 1
-              return if err
-              props.id = @id
-              all.push props
-              if counter is total
-                res.send all
-
-          
-
-        schema = Record.getModels()[req.params.name]['properties']
-        console.log schema
-        res.send JSON.stringify schema
-
-      app.get "/stats", StatsHandler, (req, res) ->
-        res.send JSON.stringify res.locals.stats
-
-      app.get "/count", CountHandler, (req, res) ->
-        res.send JSON.stringify res.locals.count
-
-      app.get "/", StatsHandler, CountHandler, (req, res) ->
-          res.render "layout", (err, html) ->
-            return console.log err if err
-            html = html.replace '{models}', JSON.stringify res.locals.count
-            html = html.replace '{stats}', JSON.stringify res.locals.stats
-            res.send html
-
-module.exports = Record
+module.exports = Reco

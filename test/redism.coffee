@@ -1,14 +1,14 @@
 should = require 'should'
 Redism = require 'redism'
-Record = require '../lib'
+Reco   = require '../lib'
 
 describe 'Nohm model on redism should be extended', ->
 
   before (done) ->
-    Record.configure
+    Reco.configure
       redis: new Redism
 
-    Record.model 'ExtendedModel',
+    Reco.model 'ExtendedModel',
       properties:
         name:
           type: 'string'
@@ -20,7 +20,7 @@ describe 'Nohm model on redism should be extended', ->
     done()
 
   it 'when it was extended by record', (done) ->
-      ExtendedModel = Record.getModel 'ExtendedModel'
+      ExtendedModel = Reco.getModel 'ExtendedModel'
       instance = new ExtendedModel
       instance.should.be.an.instanceof ExtendedModel
       ExtendedModel.should.have.property 'count'
@@ -31,7 +31,7 @@ describe 'Nohm model on redism should be extended', ->
 
 
   it 'sort is restricted', (done) ->
-    ExtendedModel = Record.getModel 'ExtendedModel'
+    ExtendedModel = Reco.getModel 'ExtendedModel'
     sortOnWrongField = -> ExtendedModel.sort field: 'name'
     sortOnWrongField.should.throw "cannot sort on non-numeric fields with redism"
 
@@ -41,7 +41,7 @@ describe 'Nohm model on redism should be extended', ->
       done()
 
   it 'find only work on single criteria', (done) ->
-    ExtendedModel = Record.getModel 'ExtendedModel'
+    ExtendedModel = Reco.getModel 'ExtendedModel'
     findByOneCriteria = -> ExtendedModel.find name: 'foo', -> 'pass'
     findByOneCriteria.should.not.throw()
 

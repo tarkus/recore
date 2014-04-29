@@ -1,14 +1,14 @@
 should = require 'should'
 Redism = require 'redism'
-Record = require '../lib'
+Reco   = require '../lib'
 
 describe 'Collections', ->
 
   before (done) ->
-    Record.configure
+    Reco.configure
       redis: new Redism
 
-    Record.model 'ExtendedModel',
+    Reco.model 'ExtendedModel',
       properties:
         name:
           type: 'string'
@@ -20,7 +20,7 @@ describe 'Collections', ->
     done()
 
   it 'could be created', (done) ->
-    ExtendedModel = Record.getModel 'ExtendedModel'
+    ExtendedModel = Reco.getModel 'ExtendedModel'
     CollectionOne = ExtendedModel.collection('10000')
     CollectionAnother = ExtendedModel.collection('100000')
 
@@ -28,12 +28,12 @@ describe 'Collections', ->
     CollectionAnother.modelName.should.equal "ExtendedModel:collection:100000"
 
     CollectionOne.load 1, (error, props) ->
-      Record.collections.hasOwnProperty 'ExtendedModel:collection:10000'
+      Reco.collections.hasOwnProperty 'ExtendedModel:collection:10000'
       error.should.equal 'not found'
       done()
 
   it 'should behave like model', (done) ->
-    ExtendedModel = Record.getModel 'ExtendedModel'
+    ExtendedModel = Reco.getModel 'ExtendedModel'
     Collection = ExtendedModel.collection '100'
 
     sortOnWrongField = -> Collection.sort field: 'name'
