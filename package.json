@@ -1,5 +1,5 @@
 {
-  "name": "reco",
+  "name": "recore",
   "version": "0.4.8",
   "description": "A simple redis orm based on Nohm",
   "main": "./lib",
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/tarkus/reco.git"
+    "url": "git://github.com/tarkus/recore.git"
   },
   "dependencies": {
     "coffee-script": "~1.7.1",
