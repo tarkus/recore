@@ -10,10 +10,10 @@ extend = (dest, objs...) ->
   dest
 
 recycle = ->
-  ids = Object.keys Reco.collections
+  ids = Object.keys Recore.collections
   if ids.length > COLLECTION_RECYCLE_TARGET
     ids = ids.slice(0, COLLECTION_RECYCLE_QUATITY)
-    ids.forEach (name) -> return delete Reco.collections[name]
+    ids.forEach (name) -> return delete Recore.collections[name]
   return setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
 COLLECTION_TTL = 300000 # View idle for 5 min = inactive
@@ -23,7 +23,7 @@ COLLECTION_RECYCLE_TARGET = 10000
 
 setTimeout recycle, COLLECTION_RECYCLE_INTERVAL
 
-class Reco extends Nohm
+class Recore extends Nohm
 
   @collections: {}
 
@@ -41,7 +41,7 @@ class Reco extends Nohm
     options.redis.connected = true
     @setClient options.redis
     @setPrefix options.prefix
-    Reco.client = Nohm.client
+    Recore.client = Nohm.client
     
     if options.models
       if options.models.charAt(0) isnt "/"
@@ -49,7 +49,7 @@ class Reco extends Nohm
       for filename in require('fs').readdirSync(options.models)
         require options.models + "/" + filename
 
-    return Reco
+    return Recore
 
   @model: (name, options, temp) ->
     schemas[name] = options
@@ -97,7 +97,7 @@ class Reco extends Nohm
       ins = new model
       if @getClient().shardable
         field_type = ins.properties[options.field].type
-        scored = Reco.indexNumberTypes.indexOf(field_type) != -1
+        scored = Recore.indexNumberTypes.indexOf(field_type) != -1
         return throw new Error "cannot sort on non-numeric fields with redism" unless scored
         return throw new Error "cannot sort on subset with redism" unless Array.isArray ids if Array.isArray ids
 
@@ -111,18 +111,28 @@ class Reco extends Nohm
 
     collection: (key) ->
       name = "#{@modelName}:collection:#{key}"
-      collection = Reco.collections[name]
+      collection = Recore.collections[name]
       unless collection
         model = @
-        collection = Reco.model name, schemas[model.modelName]
+        collection = Recore.model name, schemas[model.modelName]
         collection.modelName = name
         collection::modelName = name
-        Reco.collections[name] = collection
+        Recore.collections[name] = collection
       collection
 
-    getClient: -> Reco::getClient()
+    getClient: -> Recore::getClient()
 
-    getHashKey: (id) -> "#{Reco.prefix.hash}#{@modelName}:#{id}"
+    getIdsKey: -> "#{Recore.prefix.ids}#{@modelName}"
+
+    getIdsetsKey: -> "#{Recore.prefix.idsets}#{@modelName}"
+
+    getHashKey: (id) -> "#{Recore.prefix.hash}#{@modelName}:#{id}"
+
+    getScoredIndexKey: (field) -> "#{Recore.prefix.scoredindex}#{@modelName}:#{field}"
+
+    getIndexKey: (field, value) -> "#{Recore.prefix.index}#{@modelName}:#{field}:#{value}"
+
+    getUniqueIndexKey: (field, value) -> "#{Recore.prefix.unique}#{@modelName}:#{field}:#{value}"
 
     get: (criteria, callback) ->
       @findAndLoad criteria, (err, objs) ->
@@ -162,7 +172,7 @@ class Reco extends Nohm
         callback = criteria
         criteria = null
         m = new this
-        return @getClient().scard Reco.prefix.idsets + m.modelName, (err, result) ->
+        return @getClient().scard Recore.prefix.idsets + m.modelName, (err, result) ->
           return callback err if err
           return callback null, result
 
@@ -190,7 +200,7 @@ class Reco extends Nohm
                 propLower = if @properties[prop].type is 'string' \
                   then @properties[prop].__oldValue.toLowerCase() \
                   else @properties[prop].__oldValue
-                multi.setnx "#{Reco.prefix.unique}#{@modelName}:#{prop}:#{@properties[prop].value}", id
+                multi.setnx "#{Recore.prefix.unique}#{@modelName}:#{prop}:#{@properties[prop].value}", id
               else
                 @properties[prop].__updated = true
 
@@ -222,11 +232,11 @@ class Reco extends Nohm
           properties.push p
 
       properties.forEach (p, idx) =>
-        Reco.client.keys "#{Reco.prefix.unique}#{@modelName}:#{p}:*", (err, unique_keys) =>
+        Recore.client.keys "#{Recore.prefix.unique}#{@modelName}:#{p}:*", (err, unique_keys) =>
           deletes = unique_keys
-          Reco.client.keys "#{Reco.prefix.index}#{@modelName}:#{p}:*", (err, index_keys) =>
+          Recore.client.keys "#{Recore.prefix.index}#{@modelName}:#{p}:*", (err, index_keys) =>
             deletes = deletes.concat index_keys
-            Reco.client.keys "#{Reco.prefix.scoredindex}#{@modelName}:#{p}:*", (err, scoredindex_keys) =>
+            Recore.client.keys "#{Recore.prefix.scoredindex}#{@modelName}:#{p}:*", (err, scoredindex_keys) =>
               deletes = deletes.concat scoredindex_keys
 
               if idx is properties.length - 1
@@ -238,7 +248,7 @@ class Reco extends Nohm
 
     clean: (callback) ->
       model = new @
-      multi = Reco.client.multi()
+      multi = Recore.client.multi()
       deletes = []
       affected_rows = 0
       undefined_properties = []
@@ -250,7 +260,7 @@ class Reco extends Nohm
             err = 'not found' unless Array.isArray(keys) and keys.length > 0 and not err
 
             if err
-              Reco.logError "loading a hash produced an error: #{err}"
+              Recore.logError "loading a hash produced an error: #{err}"
               return callback?.call @, err
 
             # Delete unused properties
@@ -261,7 +271,7 @@ class Reco extends Nohm
               if not is_meta and not model.properties.hasOwnProperty(p)
                 affected_rows += 1
                 if undefined_properties.indexOf(p) is -1
-                  Reco.logError "Undefined property '#{p}' found, will be deleted"
+                  Recore.logError "Undefined property '#{p}' found, will be deleted"
                   undefined_properties.push p
                 multi.hdel @getHashKey(id), p
 
@@ -275,4 +285,4 @@ class Reco extends Nohm
 
   @_methods: null
 
-module.exports = Reco
+module.exports = Recore
