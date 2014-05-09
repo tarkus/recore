@@ -29,6 +29,8 @@ class Recore extends Nohm
 
   @base_models: {}
 
+  @getClient: -> Recore.client
+
   @getModel: (name) -> @getModels()[name]
 
   @getBaseModels: -> @base_models
@@ -41,6 +43,7 @@ class Recore extends Nohm
     options.redis.connected = true
     @setClient options.redis
     @setPrefix options.prefix
+    Recore.prefix = Nohm.prefix
     Recore.client = Nohm.client
     
     if options.models
