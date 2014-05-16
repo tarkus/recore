@@ -97,6 +97,25 @@ class Recore extends Nohm
 
     model.__sort = model.sort
     model.sort = (options, ids) ->
+
+      if typeof options is 'object' and options.field is 'id'
+        options.limit ?= [0, 100]
+        offset = options.limit[0]
+        count = options.limit[1]
+        direction = options.direction or 'DESC'
+
+        for arg in arguments
+          if typeof arg is 'function'
+            callback = arg
+            break
+
+        callback ?= (err, ids) ->
+
+        args = []
+
+        return model.getClient().sort model.getIdsetsKey(), "LIMIT", \
+          offset, count, direction, callback.bind model
+
       ins = new model
       if @getClient().shardable
         field_type = ins.properties[options.field].type
@@ -183,7 +202,7 @@ class Recore extends Nohm
         return callback err if err
         return callback null, ids.length
 
-    index: (property, callback) ->
+    create_index: (property, callback) ->
       if typeof property is "function"
         callback = property
         property = null
@@ -220,7 +239,7 @@ class Recore extends Nohm
                 multi.exec()
                 callback.call model, err, affected_rows
 
-    deindex: (properties, callback) ->
+    remove_index: (properties, callback) ->
       model = @
       multi = @getClient().multi()
       deletes = []
@@ -249,7 +268,7 @@ class Recore extends Nohm
                   return callback.call model, err, deletes.length
 
 
-    clean: (callback) ->
+    remove_property: (callback) ->
       model = new @
       multi = Recore.client.multi()
       deletes = []
