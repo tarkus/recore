@@ -1,6 +1,7 @@
 {Nohm} = require "nohm"
 assert = require 'assert'
 hasher = require './hasher'
+{EventEmitter} = require 'events'
 
 schemas = {}
 
@@ -154,7 +155,9 @@ class Recore extends Nohm
 
     getIndexKey: (field, value) -> "#{Recore.prefix.index}#{@modelName}:#{field}:#{value}"
 
-    getUniqueIndexKey: (field, value) -> "#{Recore.prefix.unique}#{@modelName}:#{field}:#{value}"
+    getUniqueIndexKey: (field, value) ->
+      value = value.toLowerCase() if isNaN(value)
+      "#{Recore.prefix.unique}#{@modelName}:#{field}:#{value}"
 
     get: (criteria, callback) ->
       @findAndLoad criteria, (err, objs) ->
@@ -202,107 +205,178 @@ class Recore extends Nohm
         return callback err if err
         return callback null, ids.length
 
-    create_index: (property, callback) ->
-      if typeof property is "function"
-        callback = property
-        property = null
+    create_index: (field) ->
+      event = new EventEmitter
 
       model = @
-      multi = @getClient().multi()
-      affected_rows = 0
-      old_unique = []
-      new_unique = []
-      @find (err, ids) =>
-        return callback.call model, err, affected_rows if err or ids.length < 1
-        ids.forEach (id, idx) =>
-          @load id, (err, props) ->
-            console.log id, @errors if err
-            set_update = (prop) =>
-              if @properties[prop].unique
-                propLower = if @properties[prop].type is 'string' \
-                  then @properties[prop].__oldValue.toLowerCase() \
-                  else @properties[prop].__oldValue
-                multi.setnx "#{Recore.prefix.unique}#{@modelName}:#{prop}:#{@properties[prop].value}", id
-              else
-                @properties[prop].__updated = true
+      count = 0
+      batch = 1
+      batch_size = 100
 
-            if property
-              set_update(property)
-            else
-              for p, def of @properties when def.index or def.unique
-                set_update(p)
+      error_handler = (err) -> event.emit 'error' if err
 
-            @save (err) ->
-              console.log "Indexed #{@modelName} on '#{property or 'all indexed properties'}' for row id #{@id}"
-              affected_rows += 1
-              if idx is ids.length - 1
-                multi.exec()
-                callback.call model, err, affected_rows
+      index = (field) ->
+        prop = @properties[field]
+        if prop.index
+          if prop.__numericIndex
+            key = model.getScoredIndexKey field
+            model.getClient().zadd key, prop.value, @id, error_handler
+          else
+            key = model.getIndexKey field, prop.value
+            model.getClient().sadd key, @id, error_handler
+        if prop.unique
+          key = model.getUniqueIndexKey field, prop.value
+          model.getClient().setnx key, @id, error_handler
 
-    remove_index: (properties, callback) ->
-      model = @
-      multi = @getClient().multi()
-      deletes = []
-      if typeof properties is 'function'
-        callback = properties
-        properties = null
-      properties = [properties] if typeof properties is 'string'
-      unless properties
-        ins = new model
-        properties = []
-        for p, def of ins.properties when def.index or def.unique
-          properties.push p
+      run = ->
+        event.emit 'checkpoint', count
+        model.sort
+          field: 'id'
+          direction: 'ASC'
+          limit: [(batch - 1) * batch_size, batch_size]
+          , (err, ids) ->
+            return event.emit 'halt', err if err
+            return event.emit 'done', count if ids.length is 0
+            batch_count = 0
+            batch_total = ids.length
+            batch++
 
-      properties.forEach (p, idx) =>
-        Recore.client.keys "#{Recore.prefix.unique}#{@modelName}:#{p}:*", (err, unique_keys) =>
-          deletes = unique_keys
-          Recore.client.keys "#{Recore.prefix.index}#{@modelName}:#{p}:*", (err, index_keys) =>
-            deletes = deletes.concat index_keys
-            Recore.client.keys "#{Recore.prefix.scoredindex}#{@modelName}:#{p}:*", (err, scoredindex_keys) =>
-              deletes = deletes.concat scoredindex_keys
+            for id in ids
+              do (id) ->
+                model.load id, (err, props) ->
+                  count++
+                  batch_count++
+                  if err
+                    event.emit 'error'
+                  else
+                    if field
+                      index.call @, field
+                    else
+                      index.call @, field for field, property of @properties
 
-              if idx is properties.length - 1
-                multi.del deletes if deletes.length > 0
-                multi.exec (err, results) =>
-                  console.log "Deleted #{deletes.length} related keys for '#{properties.join(', ')}' of #{@modelName}"
-                  return callback.call model, err, deletes.length
+                  return event.emit 'next' if batch_count is batch_total
+
+      model.count (err, count) ->
+        return event.emit 'halt', err if err
+        event.emit 'objects', count
+        event.on 'next', run
+        run()
+
+      return event
 
 
-    remove_property: (callback) ->
-      model = new @
-      multi = Recore.client.multi()
-      deletes = []
-      affected_rows = 0
-      undefined_properties = []
-      @find (err, ids) =>
-        return callback.call @, err, affected_rows if err or ids.length < 1
-        ids.forEach (id, idx) =>
-          @getClient().hgetall @getHashKey(id), (err, values) =>
-            keys = if values then Object.keys(values) else []
-            err = 'not found' unless Array.isArray(keys) and keys.length > 0 and not err
+    remove_index: (field) ->
+      event = new EventEmitter
+      event.emit 'halt', 'no field specified' unless field
 
-            if err
-              Recore.logError "loading a hash produced an error: #{err}"
-              return callback?.call @, err
+      patterns =
+        index: @getIndexKey field, '*'
+        scoredindex: @getScoredIndexKey field, '*'
+        uniques: @getUniqueIndexKey field, '*'
 
-            # Delete unused properties
-            for p of values
-              is_enumerable = values.hasOwnProperty(p)
-              is_meta = p is '__meta_version'
-              is_property = model.properties.hasOwnProperty(p)
-              if not is_meta and not model.properties.hasOwnProperty(p)
-                affected_rows += 1
-                if undefined_properties.indexOf(p) is -1
-                  Recore.logError "Undefined property '#{p}' found, will be deleted"
-                  undefined_properties.push p
-                multi.hdel @getHashKey(id), p
+      count = 0
+      total = 0
+      batch_size = 100
+      finished_clients = []
 
-            # Delete unused index keys
-            if idx is ids.length - 1
-              return callback.call model, err, affected_rows unless undefined_properties.length > 0
-              multi.exec (err, results) ->
-                console.log "Cleaned up undefined properties #{undefined_properties.join(', ')}"
-              @deindex undefined_properties, callback
+      idx = 0
+      keys = Object.keys patterns
+      clients = Object.keys Recore.getClient().clients
+
+      scan = (client, pattern, cursor=0) ->
+        event.emit 'checkpoint', count
+        client.scan cursor, 'MATCH', pattern, 'COUNT', batch_size, (err, result) ->
+          return event.emit 'halt', err if err
+
+          [cursor, matches] = result
+
+          return event.emit 'end', client if parseInt(cursor) is 0
+
+          batch_count = matches.length
+          if batch_count > 0
+            total += batch_count
+            event.emit 'objects', total
+            args = keys.push (err, result) ->
+              event.emit 'error', err if err
+              count += batch_count
+            client.del args
+
+          return event.emit 'next', client, pattern, cursor
+
+      event.on 'next', ->
+        scan.apply @, arguments
+
+      event.on 'end', (client) ->
+        finished_clients.push client
+        return event.emit 'finish' if finished_clients.length is clients.length
+
+      event.on 'finish', ->
+        return event.emit 'run'
+
+      event.on 'run', ->
+        return event.emit 'done', count if idx is keys.length
+        key = keys[idx]
+        pattern = patterns[key]
+        finished_clients = []
+        for dsn, client of Recore.getClient().clients
+          do (client, pattern) -> scan client, pattern
+        idx++
+
+      # Life cycle for single pattern 
+      #   run -> next cursor -> end cursor -> finish 
+      event.emit 'run'
+
+      return event
+
+    remove_property: (field) ->
+      event = new EventEmitter
+      event.emit 'halt', 'no field specified' unless field
+
+      pattern = @getHashKey field, '*'
+
+      count = 0
+      total = 0
+      batch_size = 100
+      finished_clients = []
+
+      clients = Object.keys Recore.getClient().clients
+
+      scan = (client, pattern, cursor=0) ->
+        event.emit 'checkpoint', count
+        client.scan cursor, 'MATCH', pattern, 'COUNT', batch_size, (err, result) ->
+          return event.emit 'halt', err if err
+
+          [cursor, matches] = result
+
+          return event.emit 'end', client, pattern if parseInt(cursor) is 0
+
+          batch_count = matches.length
+          if batch_count > 0
+            total += batch_count
+            event.emit 'objects', total
+            keys.forEach (key) ->
+              client.hdel key, field, (err, result) ->
+                event.emit 'error' if err
+                count++
+          return event.emit 'next', client, pattern, cursor
+
+      event.on 'next', ->
+        scan.apply @, arguments
+
+      event.on 'end', (client, pattern) ->
+        finished_clients.push client
+        return event.emit 'done', count if finished_clients.length is clients.length
+
+      event.on 'run', ->
+        finished_clients = []
+        for dsn, client of Recore.getClient().clients
+          do (client, pattern) -> scan client, pattern
+
+      remove_index_event = @remove_index(field)
+      remove_index_event.on 'done', ->
+        event.emit 'run'
+
+      return event
 
 
   @_methods: null
