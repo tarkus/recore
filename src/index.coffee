@@ -197,7 +197,7 @@ class Recore extends Nohm
         callback = criteria
         criteria = null
         m = new this
-        return @getClient().scard Recore.prefix.idsets + m.modelName, (err, result) ->
+        return @getClient().scard @getIdsetsKey(), (err, result) ->
           return callback err if err
           return callback null, result
 
