@@ -59,12 +59,23 @@ class Recore extends Nohm
     schemas[name] = options
     options.methods ?= {}
     options.extends ?= {}
+    options.attr_accessible ?= []
+
+    options.methods.attributes = ->
+      output = {}
+      for attr in options.attr_accessible
+        output[attr] = @prop attr
+      output
+
+    options.methods.attrs = options.methods.attributes
+    options.methods.attr = options.methods.attributes
 
     options.methods = extend options.methods, @_methods
 
     model = Nohm.model(name, options, temp)
     model = extend model, @_extends, options.extends
     model.modelName = name
+    model.isCollection = false
 
     @base_models[name] = model
 
@@ -140,6 +151,7 @@ class Recore extends Nohm
         collection = Recore.model name, schemas[model.modelName]
         collection.modelName = name
         collection::modelName = name
+        collection.isCollection = true
         Recore.collections[name] = collection
       collection
 
@@ -179,6 +191,8 @@ class Recore extends Nohm
         @load ids.pop(), (err, props) ->
           return callback err if err
           return callback null, @
+
+    
 
     ids: (ids, callback) ->
       return callback(null, []) if ids.length is 0

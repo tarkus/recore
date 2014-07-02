@@ -1,20 +1,20 @@
 should = require 'should'
-Reco = require '../lib'
+Recore = require '../lib'
 
 describe 'Nohm model should be extended', ->
 
   it 'when it was extended by reco', (done) ->
 
-      Reco.configure
+      Recore.configure
         redis: require('redis').createClient()
 
-      Reco.model 'ExtendedModel',
+      Recore.model 'ExtendedModel',
         properties:
           name:
             type: 'string'
             index: true
 
-      ExtendedModel = Reco.getModel 'ExtendedModel'
+      ExtendedModel = Recore.getModel 'ExtendedModel'
 
       instance = new ExtendedModel
       instance.should.be.an.instanceof ExtendedModel
@@ -30,10 +30,10 @@ describe 'Nohm model should be extended', ->
 
   it 'when it was extended by subclass', (done) ->
 
-    Reco.configure
+    Recore.configure
       redis: require('redis').createClient()
 
-    Reco.model 'InheritedExtendedModel',
+    Recore.model 'InheritedExtendedModel',
       properties:
         name:
           type: 'string'
@@ -44,8 +44,8 @@ describe 'Nohm model should be extended', ->
       methods:
         saveMyDay: ->
 
-    InheritedExtendedModel = Reco.getModel 'InheritedExtendedModel'
-    instance = Reco.factory 'InheritedExtendedModel'
+    InheritedExtendedModel = Recore.getModel 'InheritedExtendedModel'
+    instance = Recore.factory 'InheritedExtendedModel'
     instance.should.be.an.instanceof InheritedExtendedModel
     InheritedExtendedModel.should.have.an.property 'count'
     InheritedExtendedModel.should.have.an.property 'dummy'
