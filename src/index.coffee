@@ -61,14 +61,19 @@ class Recore extends Nohm
     options.extends ?= {}
     options.attr_accessible ?= []
 
-    options.methods.attributes = ->
+    attributes = ->
       output = {}
       for attr in options.attr_accessible
         output[attr] = @prop attr
       output
 
-    options.methods.attrs = options.methods.attributes
-    options.methods.attr = options.methods.attributes
+    if options.methods.attributes?
+      options.methods._super_attributes = attributes
+    else
+      options.methods.attributes = attributes
+
+    options.methods.attr ?= options.methods.attributes
+    options.methods.attrs ?= options.methods.attributes
 
     options.methods = extend options.methods, @_methods
 

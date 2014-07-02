@@ -1,6 +1,6 @@
 {
   "name": "recore",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "A simple redis orm based on Nohm",
   "main": "./lib",
   "scripts": {
