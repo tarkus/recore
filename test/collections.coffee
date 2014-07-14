@@ -1,14 +1,14 @@
 should = require 'should'
 Redism = require 'redism'
-Reco   = require '../lib'
+Recore   = require '../lib'
 
 describe 'Collections', ->
 
   before (done) ->
-    Reco.configure
+    Recore.configure
       redis: new Redism
 
-    Reco.model 'ExtendedModel',
+    Recore.model 'ExtendedModel',
       properties:
         name:
           type: 'string'
@@ -20,23 +20,37 @@ describe 'Collections', ->
     done()
 
   it 'could be created', (done) ->
-    ExtendedModel = Reco.getModel 'ExtendedModel'
+    ExtendedModel = Recore.getModel 'ExtendedModel'
     CollectionOne = ExtendedModel.collection('10000')
     CollectionAnother = ExtendedModel.collection('100000')
+    CollectionCombo = ExtendedModel.collection('foo', 'bar')
 
     CollectionOne.modelName.should.equal "ExtendedModel:collection:10000"
     CollectionAnother.modelName.should.equal "ExtendedModel:collection:100000"
+    CollectionCombo.modelName.should.equal "ExtendedModel:collection:foo+bar"
 
     CollectionOne.load 1, (error, props) ->
-      Reco.collections.hasOwnProperty 'ExtendedModel:collection:10000'
+      Recore.collections.hasOwnProperty 'ExtendedModel:collection:10000'
+      error.should.equal 'not found'
+
+    CollectionOne.load 1, (error, props) ->
+      Recore.collections.hasOwnProperty 'ExtendedModel:collection:10000'
+      error.should.equal 'not found'
+
+    CollectionCombo.load 1, (error, props) ->
+      Recore.collections.hasOwnProperty 'ExtendedModel:collection:foo+bar'
       error.should.equal 'not found'
       done()
 
   it 'should behave like model', (done) ->
-    ExtendedModel = Reco.getModel 'ExtendedModel'
+    ExtendedModel = Recore.getModel 'ExtendedModel'
     Collection = ExtendedModel.collection '100'
+    CollectionCombo = ExtendedModel.collection 'foo', 'bar'
 
     sortOnWrongField = -> Collection.sort field: 'name'
+    sortOnWrongField.should.throw "cannot sort on non-numeric fields with redism"
+
+    sortOnWrongField = -> CollectionCombo.sort field: 'name'
     sortOnWrongField.should.throw "cannot sort on non-numeric fields with redism"
 
     done()

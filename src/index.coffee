@@ -148,7 +148,9 @@ class Recore extends Nohm
 
   @_extends:
 
-    collection: (key) ->
+    collection: (keys ...) ->
+      assert keys.length > 0, "Key for collection cannot be empty"
+      key = keys.join '+'
       name = "#{@modelName}:collection:#{key}"
       collection = Recore.collections[name]
       unless collection
