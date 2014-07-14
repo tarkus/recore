@@ -131,7 +131,11 @@ class Recore extends Nohm
         args = []
 
         return model.getClient().sort model.getIdsetsKey(), "LIMIT", \
-          offset, count, direction, callback.bind model
+            offset, count, direction, (err, ids) ->
+              return callback.apply model, arguments unless err
+              model.getClient().sort model.getIdsetsKey(), "ALPHA", "LIMIT", \
+                offset, count, direction, (err, ids) ->
+                  callback.apply model, arguments
 
       ins = new model
       if @getClient().shardable
